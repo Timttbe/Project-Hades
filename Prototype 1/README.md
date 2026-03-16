@@ -1,8 +1,8 @@
-# Project HADES – Twin Relays Prototype
+# Project JANUS – Twin Relays Prototype
 
 ## Overview
 
-The **Twin Relays Prototype** is an early experimental version of **Project HADES**, developed to explore wireless relay control using **ESP-01 (ESP8266)** modules.
+The **Twin Relays Prototype** is an early experimental version of **Project JANUS**, developed to explore wireless relay control using **ESP-01 (ESP8266)** modules.
 
 This prototype implements a simple distributed relay control system composed of two devices communicating directly using **ESP-NOW**, a low-latency peer-to-peer protocol provided by the ESP8266 platform.
 
@@ -14,7 +14,7 @@ The main goal of this version was to experiment with:
 - embedded web interfaces on microcontrollers
 - timed relay activation
 
-Although this prototype predates the current **NodeMCU + UDP distributed architecture used in Project HADES**, it served as the foundation that validated the communication concepts later used in the main project.
+Although this prototype predates the current **NodeMCU + UDP distributed architecture used in Project JANUS**, it served as the foundation that validated the communication concepts later used in the main project.
 
 ---
 
@@ -152,7 +152,7 @@ The prototype uses simple hardware components.
 
 ## Purpose of This Prototype
 
-The Twin Relays prototype represents the **first experimental stage** of the HADES project and was developed to validate several core concepts that would later evolve into the full **Project HADES interlock system**, including:
+The Twin Relays prototype represents the **first experimental stage** of the JANUS project and was developed to validate several core concepts that would later evolve into the full **Project JANUS interlock system**, including:
 
 - wireless communication between ESP devices
 - embedded web control interfaces
@@ -160,7 +160,7 @@ The Twin Relays prototype represents the **first experimental stage** of the HAD
 - device discovery mechanisms
 - distributed control logic
 
-The lessons learned from this prototype directly influenced the development of the **current NodeMCU-based distributed architecture used in Project HADES**.
+The lessons learned from this prototype directly influenced the development of the **current NodeMCU-based distributed architecture used in Project JANUS**.
 
 ---
 
