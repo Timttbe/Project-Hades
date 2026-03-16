@@ -3,6 +3,9 @@
 
 // ====================== CONFIGURAÇÕES ======================
 #define DEVICE_NAME "PORTA_A"  // 👉 altere para "PORTA_A", "PORTA_B" ou "PORTEIRO"
+#define DEV_PORTA_A "PORTA_A"
+#define DEV_PORTA_B "PORTA_B"
+#define DEV_PORTEIRO "PORTEIRO"
 #define MASTER_DEVICE "PORTEIRO"
 const char* ssid = "Evosystems&Wires Visitante";
 const char* password = "Wifi2025";
@@ -11,7 +14,7 @@ const char* password = "Wifi2025";
 #define UDP_PORT 4210
 #define RELAY_TIME 5000  // 5 segundos
 #define SENSOR_OPEN LOW
-#define MASTER_LEASE_TIME 8000
+#define MASTER_LEASE_TIME 15000
 
 // ===================== PINOS ================================
 #define BTN1_PIN 5    // D1 - facial / botão 1 do porteiro
@@ -30,6 +33,7 @@ int devicePriority = 1;
 int masterPriority = 0;
 bool isMaster = false;
 char networkMaster[16] = "";
+char tokenOwner[16] = "";
 bool bypassMode = false;
 bool portaAberta = false;
 bool relayAtivo = false;
@@ -43,6 +47,32 @@ unsigned long lastPingSent = 0;
 unsigned long lastStatusSent = 0;
 unsigned long portaAbertaTempo = 0;
 unsigned long masterLeaseExpire = 0;
+unsigned long lastOpenEvent = 0;
+unsigned long sensorWatchdog = 0;
+unsigned long sensorDebounce = 0;
+unsigned long openToken = 0;
+unsigned long currentToken = 0;
+
+// ===================== TOKEN LOCK ==========================
+bool tokenActive = false;
+char tokenPorta[16] = "";
+unsigned long tokenExpire = 0;
+
+bool adquirirToken(const char* porta) {
+  if (!tokenActive || millis() > tokenExpire) {
+    tokenActive = true;
+    strncpy(tokenPorta, porta, sizeof(tokenPorta)-1);
+    tokenPorta[sizeof(tokenPorta)-1] = '\0';
+    tokenExpire = millis() + 10000;
+    return true;
+  }
+  return strcmp(tokenPorta, porta) == 0;
+}
+
+void liberarToken() {
+  tokenActive = false;
+  tokenPorta[0] = '\0';
+}
 
 // Estado das outras portas (recebido via rede)
 bool portaAAberta = false;
@@ -57,13 +87,11 @@ unsigned long lastMasterSeen = 0;
 unsigned long reqTimeout = 0;
 
 // ===================== FUNÇÕES =============================
-void sendBroadcast(char* msg) {
+void sendBroadcast(const char* msg) {
   IPAddress broadcastIP = WiFi.localIP() | ~WiFi.subnetMask();
   udp.beginPacket(broadcastIP, UDP_PORT);
   udp.print(msg);
   udp.endPacket();
-  Serial.println("[UDP]");
-  Serial.println(msg);
 }
 
 void sendStatus() {
@@ -73,6 +101,7 @@ void sendStatus() {
   DEVICE_NAME,
   portaAberta ? "OPEN" : "CLOSED");
   sendBroadcast(msg);
+  lastStatusSent = millis();
 }
 
 bool deviceKnown(char* dev) {
@@ -84,49 +113,71 @@ bool deviceKnown(char* dev) {
   return false;
 }
 
-bool podeAbrir(char* portaAlvo) {
+void checkSplitBrain(int prio, const char* dev) {
+
+  // Se eu sou master e aparece um dispositivo com prioridade maior
+  if (isMaster && prio > devicePriority) {
+
+    Serial.println("⚠️ Detectado master com prioridade maior!");
+    Serial.println("➡️ Abdicando do papel de master");
+
+    isMaster = false;
+    masterPriority = prio;
+
+    strncpy(networkMaster, dev, sizeof(networkMaster)-1);
+    networkMaster[sizeof(networkMaster)-1] = '\0';
+  }
+}
+
+bool podeAbrir(const char* portaAlvo) {
   // Se bypass está ativo, pode abrir sempre
+  if (millis() - lastOpenEvent < 2000) {
+    Serial.println("⏳ Sistema aguardando estabilização");
+    return false;
+  }
   if (bypassMode) {
     Serial.println("✅ Bypass ativo, abrindo sem verificar intertravamento");
     return true;
   }
 
   // Verifica intertravamento: só pode abrir se a OUTRA porta estiver fechada
-  if (strcmp(portaAlvo, "PORTA_A") == 0) {
+  if (strcmp(portaAlvo, DEV_PORTA_A) == 0) {
     // Verifica se recebeu status da PORTA_B recentemente
-    if (millis() - lastStatusPortaB > 10000 && lastStatusPortaB > 0) {
+    if (lastStatusPortaB == 0 || millis() - lastStatusPortaB > 10000) {
       Serial.println("⚠️ Sem comunicação com PORTA_B! Bloqueando por segurança.");
       return false;
     }
     
     if (portaBAberta) {
       Serial.println("🚫 PORTA_B está aberta! Não pode abrir PORTA_A.");
-      Serial.println("   Estado PORTA_B: " + String(portaBAberta ? "ABERTA" : "FECHADA"));
+      Serial.print("   Estado PORTA_B: ");
+      Serial.println(portaBAberta ? "ABERTA" : "FECHADA");
       return false;
     }
     Serial.println("✅ PORTA_B está fechada, pode abrir PORTA_A");
   } 
-  else if (strcmp(portaAlvo, "PORTA_B") == 0) {
+  else if (strcmp(portaAlvo, DEV_PORTA_B) == 0) {
     // Verifica se recebeu status da PORTA_A recentemente
-    if (millis() - lastStatusPortaA > 10000 && lastStatusPortaA > 0) {
+    if (lastStatusPortaA == 0 || millis() - lastStatusPortaA > 10000) {
       Serial.println("⚠️ Sem comunicação com PORTA_A! Bloqueando por segurança.");
       return false;
     }
     
     if (portaAAberta) {
       Serial.println("🚫 PORTA_A está aberta! Não pode abrir PORTA_B.");
-      Serial.println("   Estado PORTA_A: " + String(portaAAberta ? "ABERTA" : "FECHADA"));
+      Serial.print("   Estado PORTA_A: ");
+      Serial.println(portaAAberta ? "ABERTA" : "FECHADA");
       return false;
     }
     Serial.println("✅ PORTA_A está fechada, pode abrir PORTA_B");
   }
 
-  if (strcmp(portaAlvo, "PORTA_A") == 0 && portaBLock) {
+  if (strcmp(portaAlvo, DEV_PORTA_A) == 0 && portaBLock) {
     Serial.println("🚫 PORTA_B está travando o sistema");
     return false;
   }
 
-  if (strcmp(portaAlvo, "PORTA_B") == 0 && portaALock) {
+  if (strcmp(portaAlvo, DEV_PORTA_B) == 0 && portaALock) {
     Serial.println("🚫 PORTA_A está travando o sistema");
     return false;
   }
@@ -148,7 +199,8 @@ void solicitarAbertura(const char* porta) {
   if (networkMaster[0] != '\0') {
     Serial.println("📨 Pedindo autorização ao master");
     char reqMsg[64];
-    snprintf(reqMsg, sizeof(reqMsg), "REQ_OPEN|%s|%s", porta, DEVICE_NAME);
+    openToken = millis();
+    snprintf(reqMsg, sizeof(reqMsg), "REQ_OPEN|%s|%s|%lu", porta, DEVICE_NAME, openToken);
     sendBroadcast(reqMsg);
     aguardandoAutorizacao = true;
     reqTimeout = millis();
@@ -171,7 +223,9 @@ void addDevice(const char* dev, const char* ip) {
   for (int i = 0; i < 5; i++) {
     if (knownNames[i][0] == '\0') {
       strncpy(knownNames[i], dev, 15);
+      knownNames[i][15] = '\0';
       strncpy(knownIPs[i], ip, 15);
+      knownIPs[i][15] = '\0';
       lastPing[i] = millis();
       Serial.print("[DISCOVERY] ");
       Serial.print(dev);
@@ -192,11 +246,16 @@ void abrirPorta() {
 
   relayStart = millis();
   relayAtivo = true;
+  lastOpenEvent = millis();
 }
 
 void processMessage(char* msg) {
   if (strncmp(msg, "DISCOVERY|", 10) == 0) {
-    char* token = strtok(msg, "|");
+    char buffer[256];
+    strncpy(buffer, msg, sizeof(buffer));
+    buffer[sizeof(buffer)-1] = '\0';
+
+    char* token = strtok(buffer, "|");
     token = strtok(NULL, "|");
     char* dev = token;
     token = strtok(NULL, "|");
@@ -205,7 +264,10 @@ void processMessage(char* msg) {
   }
 
   else if (strncmp(msg, "CONFIRM|", 8) == 0) {
-    char* token = strtok(msg, "|");
+    char buffer[256];
+    strncpy(buffer, msg, sizeof(buffer));
+    buffer[sizeof(buffer)-1] = '\0';
+    char* token = strtok(buffer, "|");
     token = strtok(NULL, "|");
     char* dev = token;
     token = strtok(NULL, "|");
@@ -214,7 +276,10 @@ void processMessage(char* msg) {
   }
 
   else if (strncmp(msg, "PING|", 5) == 0) {
-    char* token = strtok(msg, "|");
+    char buffer[256];
+    strncpy(buffer, msg, sizeof(buffer));
+    buffer[sizeof(buffer)-1] = '\0';
+    char* token = strtok(buffer, "|");
     token = strtok(NULL, "|");
     char* dev = token;
     token = strtok(NULL, "|");
@@ -222,20 +287,29 @@ void processMessage(char* msg) {
     addDevice(dev, ip);
     char pongMsg[64];
     snprintf(pongMsg, sizeof(pongMsg), "PONG|%s|%s", DEVICE_NAME, localIP.toString().c_str());
-    sendBroadcast(pongMsg);
+    udp.beginPacket(udp.remoteIP(), UDP_PORT);
+    udp.print(pongMsg);
+    udp.endPacket();
   }
 
   else if (strncmp(msg, "HELLO|", 6) == 0) {
-    char* token = strtok(msg, "|");
+    char buffer[256];
+    strncpy(buffer, msg, sizeof(buffer));
+    buffer[sizeof(buffer)-1] = '\0';
+    char* token = strtok(buffer, "|");
     token = strtok(NULL, "|");
 
     char* dev = token;
-    int prio = atoi(strtok(NULL, "|"));
+    char* p = strtok(NULL, "|");
+    if (!p) return;
+    int prio = atoi(p);
     char* ip = strtok(NULL, "|");
     char* role = strtok(NULL, "|");
     unsigned long lease = atol(strtok(NULL, "|"));
+    checkSplitBrain(prio, dev);
+
     if (strcmp(dev, networkMaster) == 0) {
-      masterLeaseExpire = lease;
+      masterLeaseExpire = millis() + lease;
     }
     if (prio > masterPriority) {
       masterPriority = prio;
@@ -256,7 +330,10 @@ void processMessage(char* msg) {
   }
 
   else if (strncmp(msg, "PONG|", 5) == 0) {
-    char* token = strtok(msg, "|");
+    char buffer[256];
+    strncpy(buffer, msg, sizeof(buffer));
+    buffer[sizeof(buffer)-1] = '\0';
+    char* token = strtok(buffer, "|");
     token = strtok(NULL, "|");
     char* dev = token;
     for (int i = 0; i < 5; i++) {
@@ -268,12 +345,25 @@ void processMessage(char* msg) {
 
   else if (strncmp(msg, "REQ_OPEN|", 9) == 0) {
     if (!isMaster) return;
-    char* token = strtok(msg, "|");
+    char buffer[256];
+    strncpy(buffer, msg, sizeof(buffer));
+    buffer[sizeof(buffer)-1] = '\0';
+
+    char* token = strtok(buffer, "|");
     token = strtok(NULL, "|");
     char* porta = token;
     token = strtok(NULL, "|");
     char* origem = token;
+    token = strtok(NULL, "|");
+    unsigned long tokenID = atol(token);
     if (!deviceKnown(origem)) return;
+    bool permitido = podeAbrir(porta);
+    if (!permitido) {
+      char denyMsg[64];
+      snprintf(denyMsg,sizeof(denyMsg),"DENY|%s",porta);
+      sendBroadcast(denyMsg);
+      return;
+    }
     Serial.print("📩 Pedido de abertura: ");
     Serial.print(porta);
     Serial.print(" de ");
@@ -284,11 +374,13 @@ void processMessage(char* msg) {
         sendBroadcast(denyMsg);
         return;
     }
-    if (podeAbrir(porta)) {
+    if (permitido && adquirirToken(porta)) {
         masterBusy = true;
         masterBusyTime = millis();
+        currentToken = tokenID;
+        strncpy(tokenOwner, origem, sizeof(tokenOwner)-1);
         char allowMsg[64];
-        snprintf(allowMsg, sizeof(allowMsg), "ALLOW|%s", porta);
+        snprintf(allowMsg, sizeof(allowMsg), "ALLOW|%s|%lu", porta, currentToken);
         sendBroadcast(allowMsg);
     } 
     else {
@@ -299,8 +391,18 @@ void processMessage(char* msg) {
   }
 
   else if (strncmp(msg, "ALLOW|", 6) == 0) {
-    char* porta = msg + 6;
-    if (strcmp(porta, DEVICE_NAME) == 0) {
+    lastOpenEvent = millis();
+    char buffer[128];
+    strncpy(buffer,msg,sizeof(buffer));
+    buffer[sizeof(buffer)-1]='\0';
+
+    char* token=strtok(buffer,"|");
+    token=strtok(NULL,"|");
+    char* porta=token;
+
+    token=strtok(NULL,"|");
+    unsigned long tokenID=atol(token);
+    if (strcmp(porta, DEVICE_NAME) == 0 && tokenID == openToken) {
       Serial.println("✅ Autorização recebida!");
       abrirPorta();
       char ackMsg[64];
@@ -324,6 +426,7 @@ void processMessage(char* msg) {
     Serial.println(porta);
     if (isMaster) {
         masterBusy = false;
+        liberarToken();
     }
   }
 
@@ -349,28 +452,44 @@ void processMessage(char* msg) {
   }
 
   else if (strncmp(msg, "STATUS|", 7) == 0) {
-    char* token = strtok(msg, "|");
+    char buffer[256];
+    strncpy(buffer, msg, sizeof(buffer));
+    buffer[sizeof(buffer)-1] = '\0';
+
+    char* token = strtok(buffer, "|");
     token = strtok(NULL, "|");
     char* dev = token;
     token = strtok(NULL, "|");
     char* estado = token;
+    if (!dev || !estado) return;
     
     // Atualiza o estado das outras portas
     if (strcmp(dev, "PORTA_A") == 0) {
       bool estadoAnterior = portaAAberta;
       portaAAberta = (strcmp(estado, "OPEN") == 0);
-      portaALock = portaAAberta; // Se a porta A estiver aberta, ela trava o sistema para a porta B
+      portaALock = portaAAberta && strcmp(DEVICE_NAME, "PORTA_A") != 0; // Se a porta A estiver aberta, ela trava o sistema para a porta B
       lastStatusPortaA = millis();
-      Serial.println(String("[STATUS] PORTA_A: ") + estado +
-               (estadoAnterior != portaAAberta ? " (MUDOU!)" : ""));
-    } 
+      Serial.print("[STATUS] PORTA_A: ");
+      Serial.print(estado);
+      if (estadoAnterior != portaAAberta) {
+        Serial.println(" (MUDOU!)");
+      } else {
+        Serial.println();
+      }
+    }
+
     else if (strcmp(dev, "PORTA_B") == 0) {
       bool estadoAnterior = portaBAberta;
       portaBAberta = (strcmp(estado, "OPEN") == 0);
-      portaBLock = portaBAberta; // Se a porta B estiver aberta, ela trava o sistema para a porta A
+      portaBLock = portaBAberta && strcmp(DEVICE_NAME, "PORTA_B") != 0; // Se a porta B estiver aberta, ela trava o sistema para a porta A
       lastStatusPortaB = millis();
-      Serial.println(String("[STATUS] PORTA_B: ") + estado +
-               (estadoAnterior != portaBAberta ? " (MUDOU!)" : ""));
+      Serial.print("[STATUS] PORTA_B: ");
+      Serial.print(estado);
+      if (estadoAnterior != portaBAberta) {
+        Serial.println(" (MUDOU!)");
+      } else {
+        Serial.println();
+      }
     }
   }
 
@@ -395,11 +514,16 @@ void processMessage(char* msg) {
   }
 
   else if (strncmp(msg, "ALERT|", 6) == 0) {
-    char* token = strtok(msg, "|");
+    char buffer[256];
+    strncpy(buffer, msg, sizeof(buffer));
+    buffer[sizeof(buffer)-1] = '\0';
+    char* token = strtok(buffer, "|");
     token = strtok(NULL, "|");
     char* tipo = token;
     token = strtok(NULL, "|");
     char* origem = token;
+    token = strtok(NULL, "|");
+    unsigned long tokenID = atol(token);
     Serial.print("🚨 ALERTA recebido: ");
     Serial.print(tipo);
     Serial.print(" de ");
@@ -418,6 +542,10 @@ void setup() {
   pinMode(PUPE_PIN, OUTPUT);
   digitalWrite(RELAY_PIN, HIGH);
   digitalWrite(PUPE_PIN, HIGH);
+
+  memset(knownNames, 0, sizeof(knownNames));
+  memset(knownIPs, 0, sizeof(knownIPs));
+  memset(lastPing, 0, sizeof(lastPing));
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
@@ -444,11 +572,19 @@ void setup() {
 
   portaAberta = (digitalRead(SENSOR_PIN) == SENSOR_OPEN);
   sendStatus();
+
+  masterPriority = devicePriority; // Assume que é master até provar o contrário
+  strcpy(networkMaster, DEVICE_NAME);
+  isMaster = true;
 }
 
 // ===================== LOOP ================================
 void loop() {
-  novoEstado = (digitalRead(SENSOR_PIN) ==  SENSOR_OPEN);
+  bool leitura = (digitalRead(SENSOR_PIN) == SENSOR_OPEN);
+  if (leitura != novoEstado && millis() - sensorDebounce > 100) {
+    sensorDebounce = millis();
+    novoEstado = leitura;
+  }
   static unsigned long lastReconnect = 0;
 
     if (WiFi.status() != WL_CONNECTED) {
@@ -456,6 +592,10 @@ void loop() {
         Serial.println("⚠️ Tentando reconectar WiFi...");
         WiFi.disconnect();
         WiFi.begin(ssid, password);
+        if (WiFi.status() == WL_CONNECTED) {
+          udp.stop();
+          udp.begin(UDP_PORT);
+        }
         lastReconnect = millis();
       }
     }
@@ -466,6 +606,7 @@ void loop() {
     else if (wifiWasDown) {
         Serial.println("✅ Conexão restabelecida!");
         wifiWasDown = false;
+        sendStatus();
     }
   
   // Receber pacotes UDP
@@ -477,18 +618,18 @@ void loop() {
     processMessage(buffer);
   }
 
-  // SEMPRE envia broadcast de descoberta a cada 5s (não para nunca!)
+  // SEMPRE envia broadcast de descoberta a cada 15s (não para nunca!)
   if (millis() - lastDiscovery > 15000) {
     char msg[64];
     snprintf(msg, sizeof(msg), "DISCOVERY|%s|%s", DEVICE_NAME, localIP.toString().c_str());
     sendBroadcast(msg);
-    String role = (isMaster) ? "MASTER" : "NODE";
+    const char* role = (isMaster) ? "MASTER" : "NODE";
     char helloMsg[128];
     snprintf(helloMsg, sizeof(helloMsg), "HELLO|%s|%d|%s|%s|%lu",
              DEVICE_NAME, devicePriority,
              localIP.toString().c_str(),
-             role.c_str(),
-             millis() + MASTER_LEASE_TIME);
+             role,
+             MASTER_LEASE_TIME);
     sendBroadcast(helloMsg);
     lastDiscovery = millis();
   }
@@ -505,15 +646,32 @@ void loop() {
   if (millis() - lastStatusSent > 15000) {
     sendStatus();
     lastStatusSent = millis();
+    if (millis() - lastStatusPortaA > 20000) {
+      portaAAberta = false;
+      portaALock = false;
+    }
+    if (millis() - lastStatusPortaB > 20000) {
+      portaBAberta = false;
+      portaBLock = false;
+    }
     
 
-    Serial.println("Minha porta: " + String(portaAberta ? "ABERTA" : "FECHADA"));
-    Serial.println("PORTA_A: " + String(portaAAberta ? "ABERTA" : "FECHADA") + 
-                   " (última atualização: " + String(millis() - lastStatusPortaA) + "ms)");
-    Serial.println("PORTA_B: " + String(portaBAberta ? "ABERTA" : "FECHADA") + 
-                   " (última atualização: " + String(millis() - lastStatusPortaB) + "ms)");
-    Serial.println("Bypass: " + String(bypassMode ? "ON" : "OFF"));
-    Serial.println("Relay ativo: " + String(relayAtivo ? "SIM" : "NÃO"));
+    Serial.print("Minha porta: ");
+    Serial.println(portaAberta ? "ABERTA" : "FECHADA");
+    Serial.print("PORTA_A: ");
+    Serial.print(portaAAberta ? "ABERTA" : "FECHADA");
+    Serial.print(" (última atualização: ");
+    Serial.print(millis() - lastStatusPortaA);
+    Serial.println(" ms)");
+    Serial.print("PORTA_B: ");
+    Serial.print(portaBAberta ? "ABERTA" : "FECHADA");
+    Serial.print(" (última atualização: ");
+    Serial.print(millis() - lastStatusPortaB);
+    Serial.println(" ms)");
+    Serial.print("Bypass: ");
+    Serial.println(bypassMode ? "ON" : "OFF");
+    Serial.print("Relay ativo: ");
+    Serial.println(relayAtivo ? "SIM" : "NÃO");
     Serial.println("-------------------------");
   }
 
@@ -532,63 +690,61 @@ void loop() {
     }
   }
 
-  // Lógica de botões
-  if (strcmp(DEVICE_NAME, "PORTEIRO") == 0) {
-    // Botão 1 - Abre PORTA_A
-    static bool lastBtn1 = HIGH;
-    bool btn1State = digitalRead(BTN1_PIN);
-    if (btn1State == LOW && lastBtn1 == HIGH) {
-      Serial.println("🔘 Botão 1 pressionado - tentando abrir PORTA_A");
-      if (podeAbrir("PORTA_A")) {
-        solicitarAbertura("PORTA_A");
-        Serial.println("✅ Comando enviado para PORTA_A");
-      } else {
-        Serial.println("❌ Bloqueado pelo intertravamento");
-      }
-      delay(300);
+ // Lógica de botões
+if (strcmp(DEVICE_NAME, "PORTEIRO") == 0) {
+  // BOTÃO 1 -> PORTA_A
+  static bool lastBtn1 = HIGH;
+  static unsigned long lastBtn1Press = 0;
+  bool btn1State = digitalRead(BTN1_PIN);
+  if (btn1State == LOW && lastBtn1 == HIGH && millis() - lastBtn1Press > 300) {
+    lastBtn1Press = millis();
+    Serial.println("🔘 Botão 1 pressionado - PORTA_A");
+    if (podeAbrir("PORTA_A")) {
+      solicitarAbertura("PORTA_A");
+    } else {
+      Serial.println("❌ Bloqueado pelo intertravamento");
     }
-    lastBtn1 = btn1State;
-
-    // Botão 2 - Abre PORTA_B
-    static bool lastBtn2 = HIGH;
-    bool btn2State = digitalRead(BTN2_PIN);
-    if (btn2State == LOW && lastBtn2 == HIGH) {
-      Serial.println("🔘 Botão 2 pressionado - tentando abrir PORTA_B");
-      if (podeAbrir("PORTA_B")) {
-        solicitarAbertura("PORTA_B");
-        Serial.println("✅ Comando enviado para PORTA_B");
-      } else {
-        Serial.println("❌ Bloqueado pelo intertravamento");
-      }
-      delay(300);
+  }
+  lastBtn1 = btn1State;
+  // BOTÃO 2 -> PORTA_B
+  static bool lastBtn2 = HIGH;
+  static unsigned long lastBtn2Press = 0;
+  bool btn2State = digitalRead(BTN2_PIN);
+  if (btn2State == LOW && lastBtn2 == HIGH && millis() - lastBtn2Press > 300) {
+    lastBtn2Press = millis();
+    Serial.println("🔘 Botão 2 pressionado - PORTA_B");
+    if (podeAbrir("PORTA_B")) {
+      solicitarAbertura("PORTA_B");
+    } else {
+      Serial.println("❌ Bloqueado pelo intertravamento");
     }
-    lastBtn2 = btn2State;
-
-    // Interruptor Bypass
-    bool bypassState = (digitalRead(BYPASS_PIN) == LOW);
-    static bool lastBypass = !bypassState;
-    if (bypassState != lastBypass) {
-      char bypassMsg[64];
-      snprintf(bypassMsg, sizeof(bypassMsg), "BYPASS|%s", bypassState ? "ON" : "OFF");
-      sendBroadcast(bypassMsg);
-      lastBypass = bypassState;
-      Serial.println("🔀 Bypass alterado: " + String(bypassState ? "ON" : "OFF"));
-      delay(300);
-    }
-  } else {
-    // Portas A e B - botão local
-    static bool lastBtn1 = HIGH;
-    bool btn1State = digitalRead(BTN1_PIN);
-    if (btn1State == LOW && lastBtn1 == HIGH) {
+  }
+  lastBtn2 = btn2State;
+  // BYPASS
+  bool bypassState = (digitalRead(BYPASS_PIN) == LOW);
+  static bool lastBypass = !bypassState;
+  if (bypassState != lastBypass) {
+    char bypassMsg[64];
+    snprintf(bypassMsg, sizeof(bypassMsg), "BYPASS|%s", bypassState ? "ON" : "OFF");
+    sendBroadcast(bypassMsg);
+    lastBypass = bypassState;
+    Serial.println("🔀 Bypass alterado: ");
+    Serial.println(bypassState ? "ON" : "OFF");
+  }
+}
+  else {
+    // BOTÃO LOCAL NAS PORTAS
+    static bool lastBtn = HIGH;
+    static unsigned long lastPress = 0;
+    bool btnState = digitalRead(BTN1_PIN);
+    if (btnState == LOW && lastBtn == HIGH && millis() - lastPress > 300) {
+      lastPress = millis();
       Serial.println("🔘 Botão local pressionado");
       solicitarAbertura(DEVICE_NAME);
-      delay(300);
     }
-    lastBtn1 = btn1State;
+    lastBtn = btnState;
   }
 
-  // Atualiza estado do sensor e envia status se mudar
-  novoEstado = (digitalRead(SENSOR_PIN) == SENSOR_OPEN);
   if (novoEstado != portaAberta) {
     portaAberta = novoEstado;
     if (portaAberta) {
@@ -597,25 +753,38 @@ void loop() {
       char lockMsg[64];
       snprintf(lockMsg, sizeof(lockMsg), "LOCK|%s", DEVICE_NAME);
       sendBroadcast(lockMsg);
+      // 🔽 IMPLEMENTAÇÃO (10 linhas)
       if (strcmp(DEVICE_NAME, "PORTA_A") == 0) {
-        portaALock = true; // Se minha porta abrir, eu travo o sistema para a outra porta
+        portaAAberta = true;
+        portaALock = true;
+        lastStatusPortaA = millis();
       }
       else if (strcmp(DEVICE_NAME, "PORTA_B") == 0) {
-        portaBLock = true; // Se minha porta abrir, eu travo o sistema para a outra porta
+        portaBAberta = true;
+        portaBLock = true;
+        lastStatusPortaB = millis();
       }
     }
     else {
+      portaAbertaTempo = 0;
+
       char unlockMsg[64];
       snprintf(unlockMsg, sizeof(unlockMsg), "UNLOCK|%s", DEVICE_NAME);
       sendBroadcast(unlockMsg);
+      // 🔽 IMPLEMENTAÇÃO (10 linhas)
       if (strcmp(DEVICE_NAME, "PORTA_A") == 0) {
-        portaALock = false; // Se minha porta fechar, eu destravo o sistema para a outra porta
+        portaAAberta = false;
+        portaALock = false;
+        lastStatusPortaA = millis();
       }
       else if (strcmp(DEVICE_NAME, "PORTA_B") == 0) {
-        portaBLock = false; // Se minha porta fechar, eu destravo o sistema para a outra porta
+        portaBAberta = false;
+        portaBLock = false;
+        lastStatusPortaB = millis();
       }
     }
     sendStatus();
+    lastStatusSent = millis();
     Serial.println(portaAberta ? "🚪 Sensor: Porta ABERTA" : "🚪 Sensor: Porta FECHADA");
   }
 
@@ -655,9 +824,27 @@ void loop() {
     Serial.println("👑 Assumindo papel de master!");
   }
 
-  if (masterBusy && millis() - masterBusyTime > 30000) {
+  if (masterBusy && millis() - masterBusyTime > 10000) {
     Serial.println("⚠️ Master ocupado por muito tempo, resetando estado!");
     masterBusy = false;
     masterBusyTime = 0;
+    liberarToken();
+    Serial.println("🔄 Liberando sistema por timeout");
+    portaALock = false;
+    portaBLock = false;
+  }
+  if (portaAberta) {
+    if (sensorWatchdog == 0)
+      sensorWatchdog = millis();
+  } else {
+    sensorWatchdog = 0;
+  }
+  if (!isMaster && networkMaster[0] != '\0') {
+    if (millis() - lastMasterSeen > 20000) {
+      Serial.println("⚠️ Master desapareceu!");
+      masterPriority = devicePriority;
+      strcpy(networkMaster, DEVICE_NAME);
+      isMaster = true;
+    }
   }
 }
