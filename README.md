@@ -4,7 +4,6 @@
 ![Framework](https://img.shields.io/badge/Framework-Arduino-teal?logo=arduino)
 ![Version](https://img.shields.io/badge/Firmware-v4.0-informational)
 ![Status](https://img.shields.io/badge/Status-Active-success)
-![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
 ---
 
