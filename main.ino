@@ -1,5 +1,5 @@
 /*
- * Node_Porta_A.ino  —  v4.0
+ * main.ino  —  v4.0
  * Sistema de controle de portas com intertravamento via UDP/WiFi
  * Dispositivos: PORTA_A | PORTA_B | PORTEIRO
  *
@@ -7,12 +7,6 @@
  *   NORMAL   — conecta ao roteador com credenciais salvas na EEPROM
  *   CONFIG   — sem credenciais: sobe AP "<DEVICE>_CONFIG" com portal web
  *   FALLBACK — roteador caiu: PORTEIRO vira AP; PORTA_A/B reconectam nele
- *
- * Melhorias desta versão:
- *   • struct Device  — tabela de dispositivos organizada em struct
- *   • F() macro      — strings de debug em Flash, economiza RAM
- *   • Watchdog       — ESP.wdtFeed() nos loops bloqueantes de WiFi
- *   • FALLBACK_AP_PASS movida para #define isolado (fácil de trocar)
  */
 
 #include <ESP8266WiFi.h>
