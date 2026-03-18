@@ -45,13 +45,13 @@ This type of system is commonly used in:
  Relay + Sensor                 Relay + Sensor
  Facial Recognition             Facial Recognition
   </pre>
-</div>
 
 | Device | Role | Priority |
 |---|---|---|
 | **PORTEIRO** | Central control panel — buttons, bypass switch, default master | 3 (highest) |
 | **PORTA_A** | Controls door A | 2 |
 | **PORTA_B** | Controls door B | 1 |
+</div>
 
 ---
 
@@ -71,12 +71,16 @@ This type of system is commonly used in:
 
 **Required libraries** — all included with the ESP8266 board package, no external libraries needed:
 
+<div align = "center">
+  
 | Library | Purpose |
 |---|---|
 | `ESP8266WiFi` | Wi-Fi connection and AP management |
 | `WiFiUdp` | UDP broadcast communication |
 | `ESP8266WebServer` | Configuration and status web portals |
 | `EEPROM` | Persistent credential storage |
+
+</div>
 
 ### Steps
 
@@ -193,11 +197,15 @@ For reliable 24/7 operation:
 
 The firmware selects its Wi-Fi mode automatically at boot:
 
+<div align = "center">
+  
 | Mode | Condition | Behavior |
 |---|---|---|
 | **NORMAL** | Credentials saved in EEPROM, router reachable | Connects to the configured router |
 | **CONFIG** | No credentials saved — PORTEIRO only | Creates AP `PORTEIRO_CONFIG`, serves web portal at `192.168.4.1` |
 | **FALLBACK** | Router unreachable for 20 s | PORTEIRO creates AP `PORTEIRO_AP`; PORTA_A/B reconnect to it automatically |
+
+</div>
 
 ### First Boot — Zero-Touch Credential Distribution
 
@@ -239,11 +247,15 @@ On receive, any packet without the correct key prefix is silently discarded befo
 
 In addition, all sensitive commands are validated against a **known-IP table** (`deviceKnownByIP()`). Only devices that have previously announced themselves via DISCOVERY are accepted.
 
+<div align = "center">
+  
 | Protection | Commands covered |
 |---|---|
 | Shared key verification | All commands |
 | Known-IP validation | OPEN, BYPASS, LOCK, UNLOCK, STATUS, ALERT |
 | Source-IP restriction | WIFICFG (only `192.168.4.x`, only when unconfigured) |
+
+</div>
 
 > **To change the key:** update `#define SHARED_KEY` to the same value on all three devices before flashing. Devices with mismatched keys will not communicate.
 
@@ -253,6 +265,8 @@ In addition, all sensitive commands are validated against a **known-IP table** (
 
 All messages are prefixed with `SHARED_KEY|` in transit. The table below shows logical payloads:
 
+<div align = "center">
+  
 | Message | Direction | Purpose |
 |---|---|---|
 | `DISCOVERY\|DEV\|IP` | Broadcast | Announces presence |
@@ -271,6 +285,8 @@ All messages are prefixed with `SHARED_KEY|` in transit. The table below shows l
 | `BYPASS\|ON\|OFF` | Broadcast | Enable / disable bypass |
 | `WIFICFG\|SSID\|PASS` | Broadcast | Credential distribution (bootstrap only) |
 | `ALERT\|TYPE\|ORIGIN` | Broadcast | Door open too long |
+
+</div>
 
 ---
 
@@ -360,6 +376,8 @@ When bypass is active:
 
 ### Inputs
 
+<div align = "center">
+
 | Constant | NodeMCU Pin | GPIO | Function |
 |---|---|---|---|
 | `BTN1_PIN` | D1 | 5 | Facial recognition trigger / button 1 (PORTEIRO) |
@@ -367,12 +385,18 @@ When bypass is active:
 | `BYPASS_PIN` | D3 | 0 | Bypass toggle switch ⚠️ GPIO0 boot-sensitive |
 | `SENSOR_PIN` | D5 | 14 | Magnetic door sensor (`HIGH` = open with `INPUT_PULLUP`) |
 
+</div>
+
 ### Outputs
 
+<div align = "center">
+  
 | Constant | NodeMCU Pin | GPIO | Function |
 |---|---|---|---|
 | `RELAY_PIN` | D6 | 12 | Relay IN1 — magnetic door lock |
 | `PUPE_PIN` | D7 | 13 | Relay IN2 — push/pull actuator |
+
+</div>
 
 Relay outputs are **active LOW** — driven `HIGH` (off) by default, `LOW` to activate.
 
@@ -393,6 +417,8 @@ Relay outputs are **active LOW** — driven `HIGH` (off) by default, `LOW` to ac
 
 ## Reliability Features
 
+<div align = "center">
+  
 | Feature | Detail |
 |---|---|
 | EEPROM persistence | Wi-Fi credentials survive power cycles |
@@ -416,10 +442,14 @@ Relay outputs are **active LOW** — driven `HIGH` (off) by default, `LOW` to ac
 | Heap fragmentation prevention | No dynamic `String` in hot paths; streaming `client.print(F(...))` in portal; `snprintf` into fixed buffers for IPs |
 | GPIO0 boot guard | 2 s delay + log warning if bypass pin is LOW at boot |
 
+</div>
+
 ---
 
 ## Security Features
 
+<div align = "center">
+  
 | Feature | Detail |
 |---|---|
 | Shared key authentication | `SHARED_KEY` prefix required on every UDP packet; mismatches silently discarded |
@@ -428,20 +458,28 @@ Relay outputs are **active LOW** — driven `HIGH` (off) by default, `LOW` to ac
 | WIFICFG ignored after config | Configured nodes discard credential messages entirely |
 | Master override scoped | `OPEN|...|M` only meaningful when issued by the PORTEIRO (priority 3) |
 
+</div>
+
 ---
 
 ## EEPROM Layout
 
+<div align = "center">
+  
 | Address | Content |
 |---|---|
 | 0 – 63 | Wi-Fi SSID (null-terminated) |
 | 64 – 127 | Wi-Fi password (null-terminated) |
 | 128 | Validity flag (`0xAA` = credentials present) |
 
+</div>
+
 ---
 
 ## Configuration Reference
 
+<div align = "center">
+  
 | Constant | Default | Description |
 |---|---|---|
 | `DEVICE_NAME` | `"PORTA_A"` | Role of this node — change per device |
@@ -462,6 +500,8 @@ Relay outputs are **active LOW** — driven `HIGH` (off) by default, `LOW` to ac
 | `WIFI_CONNECT_TIMEOUT` | `15000` ms | Max wait for router at boot |
 | `WIFI_RECONNECT_TIMEOUT` | `20000` ms | Time before fallback AP activates |
 | `WIFICFG_INTERVAL` | `30000` ms | PORTEIRO credential re-broadcast interval |
+
+</div>
 
 ---
 
