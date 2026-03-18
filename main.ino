@@ -49,7 +49,7 @@
 // Adicionada automaticamente em cada mensagem enviada e verificada ao receber.
 // Elimina comandos de qualquer dispositivo fora do sistema (IP spoofing, etc).
 // 👉 Altere antes de gravar em produção.
-#define SHARED_KEY "EVO2025"
+#define SHARED_KEY "WIRES2025"
 #define PORTA_TIMEOUT     300000UL
 #define UDP_PORT          4210
 #define RELAY_TIME        5000UL
@@ -265,7 +265,7 @@ void startConfigPortal()
       "<input name='pass' type='password' placeholder='Senha (deixe vazio se aberta)'>"
       "<button type='submit'>Salvar e conectar</button>"
       "</form>"
-      "<div class='footer'>EVO Systems</div>"
+      "<div class='footer'>Wires</div>"
       "</body></html>";
     webServer.send_P(200, "text/html", PAGE);
   });
@@ -809,7 +809,7 @@ static int splitMsg(char *buf, size_t bufSize, const char *src, char **fields, i
 void processMessage(char *msg)
 {
   // Verifica chave compartilhada: rejeita mensagens sem o prefixo correto.
-  // Formato esperado: "SHARED_KEY|CMD|..."  ex: "EVO2025|STATUS|PORTA_A|OPEN"
+  // Formato esperado: "SHARED_KEY|CMD|..."  ex: "WIRES2025|STATUS|PORTA_A|OPEN"
   // WIFICFG é exceção: enviado antes do dispositivo conhecer a chave.
   const size_t keyLen = strlen(SHARED_KEY);
   if (strncmp(msg, "WIFICFG|", 8) != 0)  // WIFICFG não leva chave (bootstrap)
