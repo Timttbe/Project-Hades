@@ -24,26 +24,28 @@ This type of system is commonly used in:
 
 ## System Architecture
 
-```
-                    ┌──────────────────┐
-                    │    PORTEIRO      │
-                    │  MASTER  (prio 3)│
-                    │  Buttons/Bypass  │
-                    └────────┬─────────┘
-                             │
-         ─── UDP Broadcast, port 4210 (SHARED_KEY authenticated) ───
-                             │
-              ┌──────────────┴──────────────┐
-              │                             │
-   ┌──────────────────┐           ┌──────────────────┐
-   │     PORTA_A      │           │     PORTA_B      │
-   │   Door Control   │           │   Door Control   │
-   │    (prio 2)      │           │    (prio 1)      │
-   └──────────────────┘           └──────────────────┘
-         │                                │
-   Relay + Sensor                   Relay + Sensor
-   Facial Recognition               Facial Recognition
-```
+<div align = "center">
+  <pre>
+ ┌──────────────────┐
+ │     PORTEIRO     │
+ │ MASTER  (prio 3) │
+ │  Buttons/Bypass  │
+ └────────┬─────────┘
+│
+ ─── UDP Broadcast, port 4210 (SHARED_KEY authenticated) ───
+│
+ ┌──────────────┴───────────────┐
+ │                              │
+ ┌──────────────────┐          ┌──────────────────┐
+ │     PORTA_A      │          │     PORTA_B      │
+ │   Door Control   │          │   Door Control   │
+ │    (prio 2)      │          │     (prio 1)     │
+ └──────────────────┘          └──────────────────┘
+│                              │
+ Relay + Sensor                 Relay + Sensor
+ Facial Recognition             Facial Recognition
+  </pre>
+</div>
 
 | Device | Role | Priority |
 |---|---|---|
@@ -56,13 +58,7 @@ This type of system is commonly used in:
 ## Demo
 
 > 📹 **Video demonstration coming soon.**
->
-> *This section will show a recording of the physical system in operation: button press on the PORTEIRO triggering PORTA_A, and PORTA_B blocked by the interlock while PORTA_A is open.*
->
-> To contribute a demo, record the following scenario and open a PR:
-> 1. PORTA_A opens on button press
-> 2. Attempt to open PORTA_B while PORTA_A is open → blocked
-> 3. PORTA_A closes → PORTA_B now opens successfully
+
 
 ---
 
