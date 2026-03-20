@@ -25,21 +25,21 @@ Typical use cases:
 
 <div align="center">
 <pre>
-        ┌──────────────────────────────┐
-        │          PORTEIRO            │
-        │  WiFi AP  ·  Web Dashboard   │
-        │  BTN1 · BTN2 · Bypass Switch │
-        └──────────────┬───────────────┘
-                       │
-          UDP Broadcast · 192.168.4.255:4210
-                       │
-          ┌────────────┴────────────┐
-          │                         │
-  ┌───────────────┐         ┌───────────────┐
-  │    PORTA_A    │         │    PORTA_B    │
-  │  Relay+Sensor │         │  Relay+Sensor │
-  │  Local Button │         │  Local Button │
-  └───────────────┘         └───────────────┘
+ ┌──────────────────────────────┐
+ │          PORTEIRO            │
+ │  WiFi AP  ·  Web Dashboard   │
+ │  BTN1 · BTN2 · Bypass Switch │
+ └──────────────┬───────────────┘
+│
+UDP Broadcast · 192.168.4.255:4210
+│
+┌────────────┴────────────┐
+│                         │
+┌───────────────┐         ┌───────────────┐
+│    PORTA_A    │         │    PORTA_B    │
+│  Relay+Sensor │         │  Relay+Sensor │
+│  Local Button │         │  Local Button │
+└───────────────┘         └───────────────┘
 </pre>
 
 | Device | Role |
@@ -139,12 +139,16 @@ This design means **the interlock never depends on a router**. The router connec
 
 Accessible at `http://192.168.4.1` (AP) or the router-assigned IP (LAN). PORTEIRO only.
 
+<div align="center">
+
 | Section | Contents |
 |---|---|
 | **Topbar** | AP IP, LAN IP (if connected), Wires branding |
 | **PORTEIRO card** | Online status, AP name, connected router, bypass toggle button |
 | **PORTAS grid** | Per-door card: online/offline dot, door open/closed state, IP, Open button |
 | **WiFi Local** | Router SSID, LAN IP, signal strength, option to change network |
+
+</div>
 
 The page auto-refreshes every 4 seconds.
 
@@ -236,6 +240,8 @@ When bypass is active:
 
 All messages are plain-text, pipe-delimited, broadcast to `192.168.4.255:4210`.
 
+<div align="center">
+
 | Message | Direction | Description |
 |---|---|---|
 | `DISCOVERY\|name\|ip` | All → All | Announces presence on boot and every 5 s |
@@ -248,6 +254,8 @@ All messages are plain-text, pipe-delimited, broadcast to `192.168.4.255:4210`.
 | `BYPASS\|ON\|OFF` | PORTEIRO → All | Broadcast bypass state change |
 | `LOCK\|name` | Door → All | Relay just activated (before sensor moves) |
 | `UNLOCK\|name` | Door → All | Door closed, relay off |
+
+</div>
 
 ---
 
