@@ -342,4 +342,4 @@ Used by the PORTEIRO only. PORTA_A and PORTA_B never write to EEPROM.
 
 ## Author
 
-Developed by **Davi Han Ko** — [Wires](https://github.com/wires)
+Developed by **Davi Han Ko** — [Wires Solução e Serviços](https://github.com/Wires-Solucao-e-Servicos)
