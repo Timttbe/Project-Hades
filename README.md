@@ -65,7 +65,11 @@ This design means **the interlock never depends on a router**. The router connec
 
 ## Demo
 
-> 📹 **Video demonstration coming soon.**
+<p align="center">
+  <a href="https://youtu.be/LeEWyhVxUkA">
+    <img src="https://img.youtube.com/vi/LeEWyhVxUkA/0.jpg" width="600">
+  </a>
+</p>
 
 ---
 
